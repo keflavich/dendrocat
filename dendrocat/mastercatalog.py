@@ -2,6 +2,7 @@ from astropy.table import MaskedColumn, vstack, hstack, Table
 from collections import OrderedDict
 import numpy as np
 import astropy.units as u
+from astropy.utils.console import ProgressBar
 from copy import deepcopy
 from astropy.coordinates import SkyCoord, Angle
 
@@ -130,6 +131,8 @@ class MasterCatalog:
                 if isinstance(obj, RadioSource):
                     rs_objects.append(obj)
 
+            pb = ProgressBar(len(rs_objects))
+
             for i, rs_obj in enumerate(rs_objects):
 
                 data = rs_obj.data
@@ -211,6 +214,8 @@ class MasterCatalog:
                         self.catalog.mask[col][isnan] = True
                     except TypeError:
                         pass
+
+                pb.update()
 
 
     def ffplot(self, rsobj1, rsobj2, apertures=[], bkg_apertures=[],
