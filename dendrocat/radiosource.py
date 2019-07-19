@@ -653,15 +653,12 @@ class RadioSource:
 
         snrs = self.get_snr()
 
-        try:
-            self.catalog['rejected'] = np.zeros(len(self.catalog), dtype=int)
-        except KeyError:
-            self.catalog.add_column(Column(np.zeros(len(self.catalog))),
-                                    name='rejected')
+        rejected = (snrs <= threshold) | ~np.isfinite(snrs)
 
-        for i in range(len(self.catalog)):
-            if snrs[i] <= threshold or np.isnan(snrs[i]):
-                self.catalog['rejected'][i] = 1
+        try:
+            self.catalog['rejected'] = rejected
+        except KeyError:
+            self.catalog.add_column(Column(rejected, name='rejected'))
 
         self.accepted = self.catalog[self.catalog['rejected']==0]
         self.rejected = self.catalog[self.catalog['rejected']==1]
