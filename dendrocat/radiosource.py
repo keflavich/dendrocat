@@ -7,6 +7,7 @@ from astropy import coordinates
 from astropy.nddata.utils import Cutout2D, NoOverlapError
 from astropy.table import Column, Table, vstack
 from astrodendro import Dendrogram, pp_catalog
+from astropy.utils.console import ProgressBar
 import regions
 import pickle
 from copy import deepcopy
@@ -354,7 +355,11 @@ class RadioSource:
         pix_arrays = []
         masks = []
 
+        pb = ProgressBar(len(cutouts))
+
         for i in range(len(cutouts)):
+
+            pb.update(i)
 
             if isinstance(cutouts[i], Cutout2D):
                 pass
@@ -411,9 +416,12 @@ class RadioSource:
                                                ' an instance of a custom aper'
                                                'ture instead.')
 
-            this_mask = aperture.place(cutouts[i].data, wcs=cutouts[i].wcs)
-            if this_mask.sum() == 0:
-                raise ValueError("No pixels within aperture")
+            try:
+                this_mask = aperture.place(cutouts[i].data, wcs=cutouts[i].wcs)
+            except ValueError:
+                this_mask = np.array([], dtype='bool')
+            #if this_mask.sum() == 0:
+            #    raise ValueError("No pixels within aperture")
             pix_arrays.append(cutouts[i].data[this_mask])
             masks.append(this_mask)
             aperture = aperture_original # reset the aperture for the next source
@@ -427,7 +435,8 @@ class RadioSource:
 
 
     def get_snr(self, source=None, background=None, catalog=None, data=None,
-                cutouts=None, cutout_data=None, peak=True, save=True):
+                cutouts=None, cutout_data=None, peak=True, save=True,
+                noise=None):
         """
         Return the SNR of all sources in the catalog.
 
@@ -452,6 +461,9 @@ class RadioSource:
         save : bool, optional
             If enabled, the snr will be saved as a column in the source catalog
             and as an instance attribute. Default is True.
+        noise : None or float
+            If specified, will be treated as a uniform noise level instead
+            of using the calculated local background level
 
         Returns
         -------
@@ -489,20 +501,35 @@ class RadioSource:
                                      cutouts=cutouts)[0]
 
         snr_vals = []
+        peak_vals = []
+        noise_vals = []
         for i in range(len(catalog)):
             try:
-                snr = np.max(source[i]) / rms(background[i])
-            except (ZeroDivisionError, ValueError) as e:
+                peak = np.max(source[i])
+                if noise is None:
+                    localnoise = rms(background[i])
+                    snr = peak / localnoise
+                    noise_vals.append(localnoise)
+                else:
+                    localnoise = noise
+                    snr = np.max(source[i]) / localnoise
+                peak_vals.append(peak)
+                noise_vals.append(localnoise)
+            except (ZeroDivisionError, ValueError) as ex:
                 snr = 0.0
+                noise_vals.append(0.0)
             snr_vals.append(snr)
 
         if save:
             self.snr = np.array(snr_vals)
-            try:
-                catalog.remove_column(self.freq_id+'_snr')
-            except KeyError:
-                pass
+            for cn in ('_snr', '_peak', '_rms'):
+                try:
+                    catalog.remove_column(self.freq_id+cn)
+                except KeyError:
+                    pass
             catalog.add_column(Column(snr_vals), name=self.freq_id+'_snr')
+            catalog.add_column(Column(peak_vals), name=self.freq_id+'_peak')
+            catalog.add_column(Column(noise_vals), name=self.freq_id+'_rms')
 
         return np.array(snr_vals)
 
@@ -638,7 +665,7 @@ class RadioSource:
         else:
             plt.show()
 
-    def autoreject(self, threshold=None):
+    def autoreject(self, threshold=None, **kwargs):
         """
         Reject noisy detections.
 
@@ -651,7 +678,7 @@ class RadioSource:
         if threshold is None:
             threshold = self.threshold
 
-        snrs = self.get_snr()
+        snrs = self.get_snr(**kwargs)
 
         rejected = (snrs <= threshold) | ~np.isfinite(snrs)
 
