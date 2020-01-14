@@ -509,7 +509,6 @@ class RadioSource:
                 if noise is None:
                     localnoise = rms(background[i])
                     snr = peak / localnoise
-                    noise_vals.append(localnoise)
                 else:
                     localnoise = noise
                     snr = np.max(source[i]) / localnoise
